@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "./StorageCompatibilityValidator.sol";
 
@@ -12,7 +13,7 @@ import "./StorageCompatibilityValidator.sol";
  *      the timelock with the required 7-day delay. It also includes additional validation checks
  *      before allowing any upgrades to prevent unsafe implementations.
  */
-contract TimelockOwnedProxyAdmin is ProxyAdmin {
+contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     // 7-day upgrade delay as required
     uint256 public constant UPGRADE_DELAY = 7 days;
     
@@ -58,7 +59,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         _;
     }
     
-    constructor(address _timelock, address _storageValidator) {
+    constructor(address _timelock, address _storageValidator) ProxyAdmin(_timelock) {
         if (_timelock == address(0)) revert ZeroAddress();
         if (_storageValidator == address(0)) revert ZeroAddress();
         
@@ -68,9 +69,10 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         
         timelock = TimelockController(payable(_timelock));
         storageValidator = StorageCompatibilityValidator(_storageValidator);
-        
-        // Transfer ownership to the timelock immediately - this ensures only timelock can call owner-only functions
-        _transferOwnership(_timelock);
+
+        // ProxyAdmin's constructor sets the owner via Ownable(initialOwner).
+        // We pass _timelock directly so the timelock is the only address that
+        // can call onlyOwner functions (including upgradeAndCall).
     }
     
     /**
@@ -114,9 +116,9 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         
         // Perform the upgrade
         if (upgrade.data.length > 0) {
-            upgradeAndCall(upgrade.proxy, upgrade.implementation, upgrade.data);
+            _executeUpgradeAndCall(upgrade.proxy, upgrade.implementation, upgrade.data);
         } else {
-            upgrade(upgrade.proxy, upgrade.implementation);
+            _executeUpgrade(upgrade.proxy, upgrade.implementation);
         }
     }
     
@@ -182,24 +184,17 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
     }
     
     /**
-     * @dev Override the parent's upgrade function to ensure it can only be called through our schedule/execute flow
-     * This prevents direct upgrades that bypass the timelock
+     * @dev Internal: perform upgrade without calldata
      */
-    function upgrade(address proxy, address implementation) public override onlyOwner {
-        // Only allow this if it's being called from executeUpgrade, otherwise only timelock can initiate
-        // This maintains compatibility with the ProxyAdmin interface while enforcing our timelock
-        super.upgrade(proxy, implementation);
+    function _executeUpgrade(address proxy, address implementation) internal {
+        ITransparentUpgradeableProxy(proxy).upgradeToAndCall(implementation, "");
     }
-    
+
     /**
-     * @dev Override upgradeAndCall similarly
+     * @dev Internal: perform upgrade with calldata
      */
-    function upgradeAndCall(
-        address proxy,
-        address implementation,
-        bytes calldata data
-    ) public override onlyOwner {
-        super.upgradeAndCall(proxy, implementation, data);
+    function _executeUpgradeAndCall(address proxy, address implementation, bytes memory data) internal {
+        ITransparentUpgradeableProxy(proxy).upgradeToAndCall(implementation, data);
     }
     
     // Storage gap for future upgrades
