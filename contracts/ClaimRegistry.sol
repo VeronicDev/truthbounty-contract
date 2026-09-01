@@ -211,7 +211,7 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     }
 
     function getCanonicalClaim(bytes32 claimId) external view override returns (CanonicalClaim memory claim) {
-        if (!_canonicalClaimExists[claimId]) revert ClaimNotFound(claimId);
+        if (!_canonicalClaimExists[claimId]) revert CanonicalClaimNotFound(claimId);
         return _canonicalClaims[claimId];
     }
 

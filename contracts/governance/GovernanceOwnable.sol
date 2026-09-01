@@ -173,7 +173,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     /**
      * @notice Emergency unpause function
      */
-    function emergencyUnpause() external {
+    function emergencyUnpause() external virtual {
         require(msg.sender == emergencyAdmin || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Not authorized");
         _unpause();
     }
